@@ -26,13 +26,13 @@ class Span:
     
     def __enter__(self):
         """Allows usage as a context manager."""
-        from pytrace.tracer import _active_span_var
-        self._token = _active_span_var.set(self)
+        from pytrace.context import active_span_var
+        self._token = active_span_var.set(self)
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         """Automatically finishes the span when exiting the block."""
-        from pytrace.tracer import _active_span_var
+        from pytrace.context import active_span_var
         
         # Capture error details if an exception occurred
         if exc_type is not None:
@@ -41,5 +41,5 @@ class Span:
             self.attributes["error.message"] = str(exc_val)
             
         if self._token:
-            _active_span_var.reset(self._token)
+            active_span_var.reset(self._token)
         self.finish()

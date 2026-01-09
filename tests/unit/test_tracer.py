@@ -1,5 +1,6 @@
 from pytrace.tracer import Tracer
 from pytrace.span import Span
+from collector.memory import MemoryCollector
 
 def test_tracer_starts_span_with_generated_ids():
     """Tracer should create a span and generate a trace_id if none exists."""
@@ -60,3 +61,17 @@ def test_distributed_trace_linkage():
         child_span = tracer.start_span("database-query")
         assert child_span.trace_id == external_trace_id
         assert child_span.parent_id == span.span_id
+
+def test_automatic_function_tracing():
+    collector = MemoryCollector()
+    tracer = Tracer(collector=collector)
+    
+    def my_function():
+        return "hello"
+
+    tracer.start_auto_trace() # New method to implement
+    my_function()
+    tracer.stop_auto_trace()
+    
+    assert len(collector.spans) > 0
+    assert collector.spans[0].name == "my_function"

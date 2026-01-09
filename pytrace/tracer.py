@@ -2,14 +2,13 @@ import uuid
 import contextvars
 from typing import Optional
 from pytrace.span import Span
-
-_active_span_var = contextvars.ContextVar("active_span", default=None)
+from pytrace.context import active_span_var
 
 class Tracer:
     @property
     def active_span(self) -> Optional[Span]:
         """Return the currently active span."""
-        return _active_span_var.get()
+        return active_span_var.get()
     
     def start_span(self, name: str, trace_id: Optional[str] = None, parent_id: Optional[str] = None, attributes: Optional[dict] = None) -> Span:
         """Start a new span, automatically linking to the active parent."""
