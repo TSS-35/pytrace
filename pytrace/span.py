@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, Optional
+from typing import Dict, Optional, Callable, Any
 from time import time
 import uuid
 
@@ -12,10 +12,15 @@ class Span:
     start_time: float = field(default_factory=time)
     end_time: Optional[float] = None
     attributes: Dict[str, str] = field(default_factory=dict)
+    on_finish: Optional[Callable[['Span'], Any]] = field(default=None, repr=False)
+    _token: Optional[Any] = field(default=None, repr=False)
 
     def finish(self):
-        """Mark the span as finished by setting the end time."""
-        self.end_time = time()
+        """Mark the span as finished and trigger the collector callback."""
+        if self.end_time is None:
+            self.end_time = time()
+            if self.on_finish:
+                self.on_finish(self)
 
     @property
     def duration(self) -> Optional[float]:

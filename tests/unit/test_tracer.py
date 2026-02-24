@@ -1,6 +1,7 @@
 from pytrace.tracer import Tracer
 from pytrace.span import Span
 from collector.memory import MemoryCollector
+from pytrace.config import Config
 
 def test_tracer_starts_span_with_generated_ids():
     """Tracer should create a span and generate a trace_id if none exists."""
@@ -75,3 +76,57 @@ def test_automatic_function_tracing():
     
     assert len(collector.spans) > 0
     assert collector.spans[0].name == "my_function"
+
+def test_auto_trace_captures_nested_calls():
+    collector = MemoryCollector()
+    # We need a config that doesn't exclude the test itself
+    config = Config() 
+    tracer = Tracer(config=config, collector=collector)
+
+    def child_func():
+        return "child"
+
+    def parent_func():
+        child_func()
+        return "parent"
+
+    tracer.start_auto_trace()
+    parent_func()
+    tracer.stop_auto_trace()
+
+    # We expect 2 spans: parent_func and child_func
+    assert len(collector.spans) == 2
+    
+    # Sort by start time to identify parent and child
+    spans = sorted(collector.spans, key=lambda x: x.start_time)
+    parent_span = spans[0]
+    child_span = spans[1]
+
+    assert parent_span.name == "parent_func"
+    assert child_span.name == "child_func"
+    
+    # The Magic: Verify the linkage
+    assert child_span.parent_id == parent_span.span_id
+    assert child_span.trace_id == parent_span.trace_id
+
+def test_auto_trace_captures_exceptions():
+    collector = MemoryCollector()
+    tracer = Tracer(config=Config(), collector=collector)
+
+    def faulty_function():
+        raise RuntimeError("Auto-trace crash!")
+
+    tracer.start_auto_trace()
+    try:
+        faulty_function()
+    except RuntimeError:
+        pass
+    tracer.stop_auto_trace()
+
+    # Verify span was captured and has error metadata
+    assert len(collector.spans) >= 1
+    span = next(s for s in collector.spans if s.name == "faulty_function")
+    
+    assert span.attributes["error"] == "true"
+    assert span.attributes["error.type"] == "RuntimeError"
+    assert span.attributes["error.message"] == "Auto-trace crash!"
