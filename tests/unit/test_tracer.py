@@ -130,3 +130,167 @@ def test_auto_trace_captures_exceptions():
     assert span.attributes["error"] == "true"
     assert span.attributes["error.type"] == "RuntimeError"
     assert span.attributes["error.message"] == "Auto-trace crash!"
+
+
+def test_extract_trace_context():
+    """Verify tracer can extract trace context from a span for distributed tracing."""
+    tracer = Tracer()
+    
+    with tracer.start_span("parent", trace_id="trace_123") as span:
+        # Extract context that would be sent to another service (e.g., in HTTP headers)
+        context = tracer.extract_context(span)
+    
+    assert context["trace_id"] == "trace_123"
+    assert context["span_id"] == span.span_id
+    assert context["trace_flags"] == "01"  # Sampled
+
+
+def test_inject_trace_context():
+    """Verify tracer can inject trace context into spans for child services."""
+    tracer = Tracer()
+    
+    # Simulate receiving context from another service
+    incoming_context = {
+        "trace_id": "external_trace_456",
+        "span_id": "external_span_789",
+        "trace_flags": "01"
+    }
+    
+    # Create a span using injected context
+    span = tracer.inject_context(
+        incoming_context,
+        name="received_request"
+    )
+    
+    assert span.trace_id == "external_trace_456"
+    assert span.parent_id == "external_span_789"
+
+
+def test_http_header_propagation():
+    """Verify trace context can be extracted to HTTP headers."""
+    tracer = Tracer()
+    
+    with tracer.start_span("service_a_call", trace_id="http_trace_001") as span:
+        # Extract as HTTP headers format
+        headers = tracer.extract_as_http_headers(span)
+    
+    assert headers["traceparent"] is not None
+    # Format should be: version-trace_id-span_id-trace_flags
+    parts = headers["traceparent"].split("-")
+    assert len(parts) == 4
+    assert parts[0] == "00"  # W3C Trace Context version
+    assert parts[1] == "http_trace_001"
+    assert parts[3] == "01"  # Sampled
+
+
+def test_http_header_injection():
+    """Verify tracer can consume HTTP headers to continue a trace."""
+    tracer = Tracer()
+    
+    # Simulate headers from service A
+    headers = {"traceparent": "00-http_trace_002-parent_span_999-01"}
+    
+    # Service B receives and creates a new span
+    span = tracer.from_http_headers(headers, name="service_b_call")
+    
+    assert span.trace_id == "http_trace_002"
+    assert span.parent_id == "parent_span_999"
+
+
+def test_tracer_span_count():
+    """Verify tracer tracks total spans created."""
+    tracer = Tracer()
+    
+    assert tracer.span_count() == 0
+    
+    span1 = tracer.start_span("op_1")
+    assert tracer.span_count() == 1
+    
+    span2 = tracer.start_span("op_2")
+    assert tracer.span_count() == 2
+    
+    span1.finish()
+    span2.finish()
+    assert tracer.span_count() == 2
+
+
+def test_tracer_error_count():
+    """Verify tracer tracks spans with errors."""
+    tracer = Tracer()
+    
+    # Create successful span
+    span1 = tracer.start_span("op_1")
+    span1.finish()
+    
+    # Create span with error
+    span2 = tracer.start_span("op_2")
+    span2.attributes["error"] = "true"
+    span2.finish()
+    
+    # Create another error span
+    span3 = tracer.start_span("op_3")
+    span3.attributes["error"] = "true"
+    span3.finish()
+    
+    assert tracer.error_count() == 2
+    assert tracer.error_rate() == 2/3  # 2 errors out of 3 spans
+
+
+def test_tracer_span_duration_stats():
+    """Verify tracer calculates duration statistics."""
+    import time
+    tracer = Tracer()
+    
+    # Create spans with different durations
+    span1 = tracer.start_span("fast_op")
+    time.sleep(0.01)
+    span1.finish()
+    
+    span2 = tracer.start_span("slow_op")
+    time.sleep(0.05)
+    span2.finish()
+    
+    span3 = tracer.start_span("medium_op")
+    time.sleep(0.02)
+    span3.finish()
+    
+    stats = tracer.duration_stats()
+    
+    assert "min" in stats
+    assert "max" in stats
+    assert "avg" in stats
+    assert stats["min"] <= stats["avg"] <= stats["max"]
+    assert stats["count"] == 3
+
+
+def test_tracer_span_by_name():
+    """Verify tracer can report span counts by operation name."""
+    tracer = Tracer()
+    
+    for i in range(3):
+        span = tracer.start_span("database_query")
+        span.finish()
+    
+    for i in range(2):
+        span = tracer.start_span("api_call")
+        span.finish()
+    
+    counts = tracer.span_counts_by_name()
+    
+    assert counts["database_query"] == 3
+    assert counts["api_call"] == 2
+
+
+def test_tracer_metrics_reset():
+    """Verify tracer metrics can be reset."""
+    tracer = Tracer()
+    
+    span = tracer.start_span("op_1")
+    span.finish()
+    
+    assert tracer.span_count() == 1
+    
+    tracer.reset_metrics()
+    
+    assert tracer.span_count() == 0
+    assert tracer.error_count() == 0

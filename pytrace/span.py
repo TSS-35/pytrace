@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Callable, Any
+from typing import Dict, Optional, Callable, Any, List
 from time import time
 import uuid
 
@@ -12,6 +12,7 @@ class Span:
     start_time: float = field(default_factory=time)
     end_time: Optional[float] = None
     attributes: Dict[str, str] = field(default_factory=dict)
+    events: List[Dict[str, Any]] = field(default_factory=list)
     on_finish: Optional[Callable[['Span'], Any]] = field(default=None, repr=False)
     _token: Optional[Any] = field(default=None, repr=False)
 
@@ -21,6 +22,15 @@ class Span:
             self.end_time = time()
             if self.on_finish:
                 self.on_finish(self)
+
+    def add_event(self, name: str, attributes: Optional[Dict[str, Any]] = None):
+        """Add a timestamped event to the span."""
+        event = {
+            "name": name,
+            "timestamp": time(),
+            "attributes": attributes or {}
+        }
+        self.events.append(event)
 
     @property
     def duration(self) -> Optional[float]:
