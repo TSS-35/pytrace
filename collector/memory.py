@@ -77,7 +77,10 @@ class BatchMemoryCollector(BaseCollector):
         """Manually flush current batch."""
         with self._lock:
             self._flush_batch()
-            return sum(self.flushed_batches, [])
+            # Drain all flushed batches: flatten them and clear the buffer
+            all_spans = [span for batch in self.flushed_batches for span in batch]
+            self.flushed_batches = []
+            return all_spans
 
     def clear(self):
         """Clear all batches."""
