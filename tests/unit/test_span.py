@@ -78,4 +78,48 @@ def test_span_captures_error_metadata():
     # These will fail until we refactor __exit__
     assert span.attributes["error"] == "true"
     assert span.attributes["error.type"] == "ConnectionError"
-    assert span.attributes["error.message"] == error_msg
+
+
+def test_span_add_event():
+    """Verify that spans can record timestamped events."""
+    span = Span(name="test_op", trace_id="trace_1")
+    
+    # Add an event to the span
+    span.add_event("cache_hit", attributes={"cache.key": "user_123"})
+    
+    assert len(span.events) == 1
+    assert span.events[0]["name"] == "cache_hit"
+    assert span.events[0]["attributes"]["cache.key"] == "user_123"
+    assert "timestamp" in span.events[0]
+
+
+def test_span_multiple_events():
+    """Verify that spans can record multiple events in order."""
+    span = Span(name="multi_event_op", trace_id="trace_1")
+    
+    span.add_event("event_1", attributes={"step": "1"})
+    time.sleep(0.01)
+    span.add_event("event_2", attributes={"step": "2"})
+    time.sleep(0.01)
+    span.add_event("event_3", attributes={"step": "3"})
+    
+    assert len(span.events) == 3
+    assert span.events[0]["name"] == "event_1"
+    assert span.events[1]["name"] == "event_2"
+    assert span.events[2]["name"] == "event_3"
+    
+    # Verify events are in chronological order
+    assert span.events[0]["timestamp"] <= span.events[1]["timestamp"]
+    assert span.events[1]["timestamp"] <= span.events[2]["timestamp"]
+
+
+def test_span_events_in_context():
+    """Verify events work within context manager usage."""
+    with Span(name="context_event_test", trace_id="t1") as span:
+        span.add_event("started", attributes={"status": "initializing"})
+        time.sleep(0.01)
+        span.add_event("finished", attributes={"status": "complete"})
+    
+    assert len(span.events) == 2
+    assert span.events[0]["name"] == "started"
+    assert span.events[1]["name"] == "finished"

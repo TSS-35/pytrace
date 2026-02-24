@@ -1,6 +1,6 @@
 import uuid
 import sys
-from typing import Optional
+from typing import Optional, Dict, List
 from pytrace.span import Span
 from pytrace.context import active_span_var
 
@@ -10,6 +10,7 @@ class Tracer:
         self.collector = collector
         self._active_tokens = {} # Maps span_id to context token
         self._is_tracing = False
+        self._spans: List[Span] = []  # Track all spans for metrics
 
     @property
     def active_span(self) -> Optional[Span]:
@@ -20,13 +21,15 @@ class Tracer:
         trace_id = kwargs.get("trace_id") or (parent.trace_id if parent else uuid.uuid4().hex)
         parent_id = kwargs.get("parent_id") or (parent.span_id if parent else None)
         
-        return Span(
+        span = Span(
             name=name,
             trace_id=trace_id,
             parent_id=parent_id,
             attributes=kwargs.get("attributes") or {},
             on_finish=self.collector.send_span if self.collector else None
         )
+        self._spans.append(span)  # Track for metrics
+        return span
 
     def start_auto_trace(self):
         if not self._is_tracing:
@@ -73,3 +76,92 @@ class Tracer:
                     active_span_var.reset(token)
 
         return self._trace_callback
+
+    # Metrics Methods
+    def span_count(self) -> int:
+        """Return the total number of spans created."""
+        return len(self._spans)
+
+    def error_count(self) -> int:
+        """Return the count of spans with errors."""
+        return sum(1 for span in self._spans if span.attributes.get("error") == "true")
+
+    def error_rate(self) -> float:
+        """Return the error rate as a fraction (0.0 to 1.0)."""
+        if not self._spans:
+            return 0.0
+        return self.error_count() / len(self._spans)
+
+    def duration_stats(self) -> Dict[str, float]:
+        """Return duration statistics for all spans."""
+        finished_spans = [s for s in self._spans if s.duration is not None]
+        if not finished_spans:
+            return {"count": 0, "min": 0, "max": 0, "avg": 0}
+        
+        durations = [s.duration for s in finished_spans]
+        return {
+            "count": len(durations),
+            "min": min(durations),
+            "max": max(durations),
+            "avg": sum(durations) / len(durations)
+        }
+
+    def span_counts_by_name(self) -> Dict[str, int]:
+        """Return span counts grouped by operation name."""
+        counts: Dict[str, int] = {}
+        for span in self._spans:
+            counts[span.name] = counts.get(span.name, 0) + 1
+        return counts
+
+    def reset_metrics(self):
+        """Clear all tracked spans and metrics."""
+        self._spans = []
+
+    # Trace Context Propagation Methods (for distributed tracing)
+    def extract_context(self, span: Span) -> Dict:
+        """Extract trace context from a span for propagation to other services."""
+        return {
+            "trace_id": span.trace_id,
+            "span_id": span.span_id,
+            "trace_flags": "01"  # Sampled
+        }
+
+    def inject_context(self, context: Dict, name: str, **kwargs) -> Span:
+        """Create a span using injected context from another service."""
+        trace_id = context.get("trace_id")
+        parent_id = context.get("span_id")
+        attributes = kwargs.get("attributes") or {}
+        
+        return self.start_span(
+            name=name,
+            trace_id=trace_id,
+            parent_id=parent_id,
+            attributes=attributes
+        )
+
+    def extract_as_http_headers(self, span: Span) -> Dict[str, str]:
+        """Extract trace context in W3C Trace Context format for HTTP headers."""
+        # Format: version-trace_id-span_id-trace_flags
+        traceparent = f"00-{span.trace_id}-{span.span_id}-01"
+        return {"traceparent": traceparent}
+
+    def from_http_headers(self, headers: Dict[str, str], name: str, **kwargs) -> Span:
+        """Create a span from W3C Trace Context HTTP headers."""
+        traceparent = headers.get("traceparent", "")
+        
+        if traceparent:
+            # Parse: version-trace_id-span_id-trace_flags
+            parts = traceparent.split("-")
+            if len(parts) >= 4:
+                trace_id = parts[1]
+                parent_id = parts[2]
+                
+                return self.start_span(
+                    name=name,
+                    trace_id=trace_id,
+                    parent_id=parent_id,
+                    **kwargs
+                )
+        
+        # Fallback if no valid header
+        return self.start_span(name=name, **kwargs)
