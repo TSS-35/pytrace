@@ -64,6 +64,10 @@ class Query:
     
     def offset(self, count: int) -> "Query":
         """Skip count spans in results."""
+        if not isinstance(count, int):
+            raise TypeError(f"offset count must be an integer, got {type(count).__name__}")
+        if count < 0:
+            raise ValueError(f"offset count must be non-negative, got {count}")
         self._offset_count = count
         return self
     
