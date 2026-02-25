@@ -10,6 +10,7 @@ pytrace enables you to:
 - **Propagate context** across distributed services using W3C Trace Context standards
 - **Capture events** and attributes for rich operational insights
 - **Aggregate metrics** including error rates, latency statistics, and operation counts
+- **Query spans** with powerful filtering, sorting, and pagination
 - **Persist data** using multiple backends (memory, JSON files, SQLite)
 
 ## Installation
@@ -148,6 +149,39 @@ config = Config(
     exclude_modules=["myapp.vendor"]                  # Except these
 )
 tracer = Tracer(config=config)
+```
+
+#### **Query API**
+Powerful fluent interface for filtering and analyzing spans:
+
+```python
+from pytrace.query import Query
+
+# Basic filtering
+Query(collector).by_name("database_query").execute()
+Query(collector).by_trace_id("trace_123").execute()
+Query(collector).with_errors().execute()
+
+# Sorting
+Query(collector).sort_by_duration("desc").execute()       # Slowest first
+Query(collector).sort_by_start_time("asc").execute()      # Oldest first
+
+# Duration filtering
+Query(collector).by_duration_range(10, 100).execute()     # 10-100ms
+
+# Pagination
+Query(collector).limit(10).offset(20).execute()           # Get 10, skip 20
+
+# Chaining
+results = (Query(collector)
+           .by_name("api_call")
+           .with_errors()
+           .sort_by_duration("desc")
+           .limit(5)
+           .execute())
+
+# Counting
+error_count = Query(collector).with_errors().count()
 ```
 
 ### Context Variables
