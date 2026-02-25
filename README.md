@@ -271,23 +271,128 @@ tracer.reset_metrics()
 
 ## Testing
 
+The pytrace project follows Test-Driven Development (TDD) practices with comprehensive test coverage across unit and integration tests.
+
+### Running Tests
+
 ```bash
-# Run all tests
+# Run all tests (unit + integration)
+poetry run pytest tests/ -v
+
+# Run unit tests only
 poetry run pytest tests/unit/ -v
+
+# Run integration tests only
+poetry run pytest tests/integration/ -v
 
 # Run specific test file
 poetry run pytest tests/unit/test_span.py -v
 
-# Run with coverage
-poetry run pytest tests/unit/ --cov=pytrace --cov=collector
+# Run with coverage report
+poetry run pytest tests/ --cov=pytrace --cov=collector --cov-report=html
 ```
 
-The test suite includes tests covering:
-- Span creation, duration, events, and error capture
-- Tracer span management and metrics
-- Trace context extraction and W3C header propagation
-- Collector buffering, flushing, and batching
-- Configuration filtering
+### Test Suite Overview
+
+**Total Test Count: 107 tests (75 unit + 32 integration)**
+
+#### Unit Tests (75 tests)
+
+**Span & Events (9 tests)** - `test_span.py`
+- Span creation with auto-generated IDs
+- Span duration measurement
+- Span event recording and lifecycle
+- Event context preservation
+- Error tracking and status
+
+**Configuration (2 tests)** - `test_config.py`
+- Module filtering logic
+- Configuration initialization
+
+**Collectors (19 tests)** - `test_base.py`, `test_memory_collector.py`, `test_jsonfile.py`, `test_sqlite.py`
+- Memory collector buffering
+- Batch memory collector with callbacks
+- JSON file collector with disk persistence
+- SQLite collector with database storage
+- Collector interface compliance
+
+**Tracer & Context (16 tests)** - `test_tracer.py`
+- Span creation and ID generation
+- Active span context management
+- Trace context extraction/injection (W3C headers)
+- HTTP header propagation
+- Automatic function instrumentation (auto-trace)
+- Nested call capture
+- Exception handling in traced functions
+- Metrics tracking (counts, errors, duration stats, span names)
+- Metrics reset functionality
+
+**Query API (14 tests)** - `test_query_api.py`
+- Span filtering by trace ID, name, error status, duration
+- Multi-filter AND logic
+- Sorting by duration, start time, name (ascending/descending)
+- Pagination with limit/offset
+- Method chaining
+- Result counting
+
+**HTTP Server API (21 tests)** - `test_server_api.py`
+- Health check endpoint
+- Span retrieval and filtering
+- Trace retrieval and grouping
+- Operation enumeration
+- Metrics endpoint
+- Query parameter handling
+- Error responses and validation
+- JSON serialization
+
+#### Integration Tests (32 tests)
+
+**End-to-End Tracing Flow (9 tests)** - `test_end_to_end_tracing.py`
+- Complete span lifecycle workflow
+- Nested span hierarchies
+- Multiple isolated traces
+- Error capture and propagation
+- Metrics collection validation
+- Duration stats aggregation
+- Complex query combinations with sorting/pagination
+
+**Distributed Tracing (6 tests)** - `test_distributed_tracing.py`
+- Multi-service trace propagation
+- Context extraction from W3C headers
+- Context injection into headers
+- Header round-trip preservation
+- Multi-hop distributed traces
+- Cross-service error tracking
+
+**Auto-Trace Integration (5 tests)** - `test_auto_trace_integration.py`
+- Automatic span creation for function calls
+- Nested function call hierarchy preservation
+- Exception handling and capture
+- Module filtering behavior
+- Metrics accumulation from auto-traced functions
+
+**Server Integration (12 tests)** - `test_server_integration.py`
+- Server data consistency with Query API
+- Metrics accuracy across endpoints
+- Trace grouping and retrieval
+- Complex filtering scenarios
+- Multi-collector routing
+- Batch collector integration
+- End-to-end server flows with real data
+
+### Test Results
+
+```
+============================= 107 passed in 1.00s ==============================
+75 unit tests + 32 integration tests
+```
+
+All tests pass consistently, demonstrating:
+- Core functionality correctness
+- Component integration reliability
+- Distributed tracing support
+- HTTP API compliance
+- Query capability accuracy
 
 ## Project Structure
 
@@ -307,6 +412,126 @@ pytrace/
 │   └── unit/           # Comprehensive unit tests
 ├── pyproject.toml      # Poetry configuration
 └── README.md           # This file
+```
+
+## HTTP API Server
+
+pytrace includes a built-in Flask API server for querying and analyzing traces over HTTP.
+
+### Starting the Server
+
+```python
+from pytrace.server import create_app
+from collector.memory import MemoryCollector
+
+collector = MemoryCollector()
+app = create_app(collector)
+app.run(port=5000)
+```
+
+Or run the example:
+
+```bash
+poetry run python examples/server.py
+```
+
+### API Endpoints
+
+#### **Health Check**
+```
+GET /api/health
+```
+Returns server status.
+
+#### **List Spans**
+```
+GET /api/spans?name=&trace_id=&error=true&sort=&order=&limit=&offset=
+```
+Query spans with optional filters:
+- `name` - Filter by operation name
+- `trace_id` - Filter by trace ID
+- `error` - Filter to error spans (true/false)
+- `sort` - Sort by: duration, start_time, name
+- `order` - Sort order: asc, desc
+- `limit` - Maximum results
+- `offset` - Skip N results
+
+Example:
+```bash
+curl "http://localhost:5000/api/spans?name=database_query&error=true&sort=duration&order=desc"
+```
+
+#### **Get Span**
+```
+GET /api/spans/{span_id}
+```
+Get specific span by ID.
+
+#### **List Traces**
+```
+GET /api/traces?error=true
+```
+List all traces with optional error filter.
+
+#### **Get Trace**
+```
+GET /api/traces/{trace_id}
+```
+Get all spans from a specific trace.
+
+#### **List Operations**
+```
+GET /api/operations
+```
+Get operation names and counts.
+
+#### **Get Metrics**
+```
+GET /api/metrics
+```
+Get overall metrics including:
+- Total span count
+- Error count and rate
+- Duration statistics (min/max/avg)
+- Operation counts
+
+Example response:
+```json
+{
+  "total_spans": 42,
+  "error_count": 3,
+  "error_rate": 0.071,
+  "duration_stats": {
+    "min_ms": 0.5,
+    "max_ms": 145.2,
+    "avg_ms": 23.1,
+    "count": 42
+  },
+  "operations": {
+    "database_query": 15,
+    "api_call": 12,
+    "cache_lookup": 15
+  }
+}
+```
+
+### Common Query Examples
+
+```bash
+# Get all database queries
+curl "http://localhost:5000/api/spans?name=database_query"
+
+# Get spans with errors
+curl "http://localhost:5000/api/spans?error=true"
+
+# Get slowest 10 spans
+curl "http://localhost:5000/api/spans?sort=duration&order=desc&limit=10"
+
+# Get entire trace by trace ID
+curl "http://localhost:5000/api/traces/trace_001"
+
+# Get metrics for a specific operation
+curl "http://localhost:5000/api/spans?name=api_request" | jq '.spans | length'
 ```
 
 ## Design Principles
