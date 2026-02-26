@@ -74,27 +74,62 @@ Tests are located in the `tests/` directory and use vitest + React Testing Libra
 
 ## API Integration
 
-The dashboard connects to the pytrace HTTP API server.
+The dashboard connects to the pytrace HTTP API server. It supports both development and production configurations.
 
-### Configuration
+### Development Setup (Default)
 
-Configure the API endpoint in `src/api/client.ts`:
+During development, the Vite dev server proxies `/api` requests to the backend:
 
-```typescript
-const api = axios.create({
-  baseURL: process.env.VITE_API_URL || 'http://localhost:5000'
-})
+```bash
+npm run dev
+# Proxies /api/* → http://localhost:5000/api/*
 ```
 
-Default endpoint: `http://localhost:5000`
+The pytrace server should be running on port 5000:
 
-### Environment Variables
+```bash
+poetry run python examples/server.py
+```
 
-Create a `.env` file to override API settings:
+**How it works:**
+- `src/api/client.ts` defaults to `baseURL: '/api'` (relative URL)
+- Vite dev server (in `vite.config.ts`) proxies `/api` to `http://localhost:5000`
+- This allows development without CORS issues
+
+### Production Setup
+
+For production deployments where the API server is on a different host, configure the API URL via environment variable before building:
+
+```bash
+# Set API URL pointing to your pytrace server
+export VITE_API_URL=https://api.example.com:5000
+
+# Build production bundle
+npm run build
+```
+
+**Environment Variables:**
+
+Create a `.env` file or set environment variables:
 
 ```env
-VITE_API_URL=http://your-api-server:5000
+# For production: Full API URL
+VITE_API_URL=https://api.example.com:5000
+
+# For dev proxy target (optional, defaults to http://localhost:5000)
+VITE_API_TARGET=http://your-backend:5000
 ```
+
+**Note:** 
+- `VITE_API_URL` - Used in production builds for absolute URLs
+- `VITE_API_TARGET` - Used during dev to configure the Vite proxy target
+- Both are optional and default to `http://localhost:5000`
+
+### API Endpoints
+
+All requests are relative to the configured base URL:
+- Development: `http://localhost:5173/api/*` (via proxy)
+- Production: `https://api.example.com:5000/*` (via VITE_API_URL)
 
 ## Project Structure
 

@@ -8,7 +8,8 @@ import type {
   Span
 } from '../types'
 
-const API_BASE = '/api'
+// Support both development (relative /api via proxy) and production (absolute URL via env)
+const API_BASE = import.meta.env.VITE_API_URL || '/api'
 
 const client = axios.create({
   baseURL: API_BASE,

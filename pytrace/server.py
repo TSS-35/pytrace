@@ -77,9 +77,16 @@ def create_app(collector):
     
     @app.route('/api/traces', methods=['GET'])
     def list_traces():
-        """List all traces with optional filtering."""
+        """List all traces with optional filtering.
+        
+        Query parameters:
+        - error: Filter to error traces (true/false)
+        - includeSpans: Include full span details (true/false, default: false)
+          Set to true to get spans, or call /api/traces/<trace_id> for details
+        """
         try:
             error = request.args.get('error', '').lower() == 'true'
+            include_spans = request.args.get('includeSpans', '').lower() == 'true'
             
             # Group spans by trace_id
             traces_dict = {}
@@ -105,16 +112,21 @@ def create_app(collector):
                 else:
                     duration = None
                 
-                traces.append({
+                trace = {
                     'traceId': trace_id,
-                    'spans': [_serialize_span(s) for s in spans],
                     'startTime': min(s.start_time for s in spans) if spans else 0,
                     'endTime': max(s.end_time for s in spans if s.end_time) if spans else 0,
                     'duration': duration,
                     'spanCount': len(spans),
                     'errorCount': sum(1 for s in spans if s.attributes.get('error') == 'true'),
                     'status': 'error' if has_error else 'success'
-                })
+                }
+                
+                # Only include spans if explicitly requested
+                if include_spans:
+                    trace['spans'] = [_serialize_span(s) for s in spans]
+                
+                traces.append(trace)
             
             return jsonify(traces)
         
@@ -144,10 +156,17 @@ def create_app(collector):
     
     @app.route('/api/operations', methods=['GET'])
     def list_operations():
-        """List all operation names with counts and statistics."""
+        """List all operation names with counts and statistics.
+        
+        Filters out in-flight spans (those without duration/end_time).
+        """
         operation_stats = {}
         
         for span in app.collector.spans:
+            # Skip in-flight spans (no end_time yet, duration is None)
+            if span.duration is None:
+                continue
+            
             if span.name not in operation_stats:
                 operation_stats[span.name] = {
                     'name': span.name,
@@ -160,7 +179,7 @@ def create_app(collector):
             
             stats = operation_stats[span.name]
             stats['callCount'] += 1
-            stats['totalDuration'] += span.duration
+            stats['totalDuration'] += span.duration  # Already in milliseconds
             stats['minDuration'] = min(stats['minDuration'], span.duration)
             stats['maxDuration'] = max(stats['maxDuration'], span.duration)
             
@@ -170,14 +189,10 @@ def create_app(collector):
         # Calculate averages and error rates
         operations = []
         for op_name, stats in operation_stats.items():
-            stats['avgDuration'] = stats['totalDuration'] / stats['callCount'] if stats['callCount'] > 0 else 0
-            stats['minDuration'] = stats['minDuration'] if stats['minDuration'] != float('inf') else 0
-            stats['errorRate'] = stats['errorCount'] / stats['callCount'] if stats['callCount'] > 0 else 0
-            
-            # Convert to milliseconds
-            stats['avgDuration'] = round(stats['avgDuration'] * 1000, 2)
-            stats['minDuration'] = round(stats['minDuration'] * 1000, 2)
-            stats['maxDuration'] = round(stats['maxDuration'] * 1000, 2)
+            stats['avgDuration'] = round(stats['totalDuration'] / stats['callCount'], 2) if stats['callCount'] > 0 else 0
+            stats['minDuration'] = round(stats['minDuration'], 2) if stats['minDuration'] != float('inf') else 0
+            stats['maxDuration'] = round(stats['maxDuration'], 2)
+            stats['errorRate'] = round(stats['errorCount'] / stats['callCount'], 4) if stats['callCount'] > 0 else 0
             
             operations.append(stats)
         
@@ -185,17 +200,30 @@ def create_app(collector):
     
     @app.route('/api/metrics/latency', methods=['GET'])
     def get_latency_metrics():
-        """Get latency percentile metrics."""
+        """Get latency percentile metrics.
+        
+        Filters out in-flight spans (those without duration/end_time).
+        """
         operation = request.args.get('operation')
         
         durations = []
         for span in app.collector.spans:
+            # Skip in-flight spans (duration is None)
+            if span.duration is None:
+                continue
             if operation and span.name != operation:
                 continue
-            durations.append(span.duration * 1000)  # Convert to ms
+            durations.append(span.duration)  # Already in milliseconds
         
         if not durations:
-            durations = [0]
+            return jsonify({
+                'p50': 0,
+                'p95': 0,
+                'p99': 0,
+                'min': 0,
+                'max': 0,
+                'avg': 0
+            })
         
         durations.sort()
         
@@ -207,44 +235,57 @@ def create_app(collector):
             'p50': percentile(durations, 50),
             'p95': percentile(durations, 95),
             'p99': percentile(durations, 99),
-            'min': round(min(durations), 2) if durations else 0,
-            'max': round(max(durations), 2) if durations else 0,
-            'avg': round(sum(durations) / len(durations), 2) if durations else 0
-        }) if durations else jsonify({
-            'p50': 0,
-            'p95': 0,
-            'p99': 0,
-            'min': 0,
-            'max': 0,
-            'avg': 0
+            'min': round(min(durations), 2),
+            'max': round(max(durations), 2),
+            'avg': round(sum(durations) / len(durations), 2)
         })
     
     @app.route('/api/metrics/latency/slowest', methods=['GET'])
     def get_slowest_operations():
-        """Get slowest operations."""
+        """Get slowest operations by average duration.
+        
+        Returns complete operation stats matching OperationStats interface.
+        Filters out in-flight spans (those without duration/end_time).
+        """
         limit = request.args.get('limit', default=10, type=int)
         
         operation_stats = {}
         
         for span in app.collector.spans:
+            # Skip in-flight spans (no end_time yet, duration is None)
+            if span.duration is None:
+                continue
+            
             if span.name not in operation_stats:
                 operation_stats[span.name] = {
                     'name': span.name,
                     'callCount': 0,
-                    'avgDuration': 0,
-                    'totalDuration': 0
+                    'totalDuration': 0,
+                    'minDuration': float('inf'),
+                    'maxDuration': 0,
+                    'errorCount': 0
                 }
             
             stats = operation_stats[span.name]
             stats['callCount'] += 1
-            stats['totalDuration'] += span.duration * 1000  # Convert to ms
+            stats['totalDuration'] += span.duration  # Already in milliseconds
+            stats['minDuration'] = min(stats['minDuration'], span.duration)
+            stats['maxDuration'] = max(stats['maxDuration'], span.duration)
+            
+            if span.attributes.get('error') == 'true':
+                stats['errorCount'] += 1
         
-        # Calculate averages and sort
+        # Calculate averages, error rates
         operations = []
         for op_name, stats in operation_stats.items():
-            stats['avgDuration'] = round(stats['totalDuration'] / stats['callCount'], 2)
+            stats['avgDuration'] = round(stats['totalDuration'] / stats['callCount'], 2) if stats['callCount'] > 0 else 0
+            stats['minDuration'] = round(stats['minDuration'], 2) if stats['minDuration'] != float('inf') else 0
+            stats['maxDuration'] = round(stats['maxDuration'], 2)
+            stats['errorRate'] = round(stats['errorCount'] / stats['callCount'], 4) if stats['callCount'] > 0 else 0
+            
             operations.append(stats)
         
+        # Sort by average duration (slowest first)
         operations.sort(key=lambda x: x['avgDuration'], reverse=True)
         
         return jsonify(operations[:limit])

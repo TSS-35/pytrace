@@ -524,9 +524,31 @@ Get specific span by ID.
 
 #### **List Traces**
 ```
-GET /api/traces?error=true
+GET /api/traces?error=true&includeSpans=true
 ```
-List all traces with optional error filter.
+List all traces with optional filtering. By default only returns trace summaries to keep responses fast and lightweight.
+
+Query parameters:
+- `error` - Filter to error traces only (true/false)
+- `includeSpans` - Include full span details in response (true/false, default: false)
+  - When false: Returns lightweight trace summaries with counts and timing
+  - When true: Includes complete serialized spans for each trace
+  - For detailed analysis: Call `/api/traces/{trace_id}` to get full span details
+
+Response (summary):
+```json
+[
+  {
+    "traceId": "trace_001",
+    "startTime": 1234567890,
+    "endTime": 1234567950,
+    "duration": 60.5,
+    "spanCount": 5,
+    "errorCount": 0,
+    "status": "success"
+  }
+]
+```
 
 #### **Get Trace**
 ```
@@ -573,6 +595,18 @@ Example response:
 ### Common Query Examples
 
 ```bash
+# List traces (lightweight summaries - fast)
+curl "http://localhost:5000/api/traces"
+
+# List traces with error filter
+curl "http://localhost:5000/api/traces?error=true"
+
+# Get full trace details by ID (recommended for detailed analysis)
+curl "http://localhost:5000/api/traces/trace_001"
+
+# Get lightweight trace summaries with full spans (slower, use for large datasets with caution)
+curl "http://localhost:5000/api/traces?includeSpans=true"
+
 # Get all database queries
 curl "http://localhost:5000/api/spans?name=database_query"
 
@@ -581,9 +615,6 @@ curl "http://localhost:5000/api/spans?error=true"
 
 # Get slowest 10 spans
 curl "http://localhost:5000/api/spans?sort=duration&order=desc&limit=10"
-
-# Get entire trace by trace ID
-curl "http://localhost:5000/api/traces/trace_001"
 
 # Get metrics for a specific operation
 curl "http://localhost:5000/api/spans?name=api_request" | jq '.spans | length'
