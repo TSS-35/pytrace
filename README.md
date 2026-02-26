@@ -456,6 +456,15 @@ pytrace/
 │   ├── redaction.py    # Span redaction examples
 │   ├── query_api.py    # Query API examples
 │   └── server.py       # HTTP server examples
+├── dashboard/          # React web dashboard for trace visualization
+│   ├── src/
+│   │   ├── components/ # React components (Dashboard, TraceExplorer, etc.)
+│   │   ├── api/        # API client
+│   │   ├── types/      # TypeScript definitions
+│   │   └── App.tsx     # Main app component
+│   ├── tests/          # Component unit tests
+│   ├── package.json    # npm dependencies
+│   └── README.md       # Dashboard documentation
 ├── pyproject.toml      # Poetry configuration
 └── README.md           # This file
 ```
@@ -579,6 +588,40 @@ curl "http://localhost:5000/api/traces/trace_001"
 # Get metrics for a specific operation
 curl "http://localhost:5000/api/spans?name=api_request" | jq '.spans | length'
 ```
+
+## Web Dashboard
+
+pytrace includes a modern React-based web dashboard for visualizing and analyzing traces in real-time.
+
+### Quick Start
+
+```bash
+# Install dependencies
+cd dashboard
+npm install
+
+# Start development server
+npm run dev
+```
+
+The dashboard will be available at `http://localhost:5173`
+
+### Features
+
+- **Trace Explorer**: Browse and search distributed traces with detailed span information
+- **Operations Dashboard**: Monitor service operations and request counts
+- **Latency Analysis**: Visualize trace latencies and performance metrics with charts
+- **Error Analysis**: Track and analyze errors across services
+- **Responsive Layout**: Optimized for desktop and tablet viewing
+
+### Building for Production
+
+```bash
+cd dashboard
+npm run build
+```
+
+See [dashboard/README.md](dashboard/README.md) for detailed setup, testing, and development instructions.
 
 ## Design Principles
 

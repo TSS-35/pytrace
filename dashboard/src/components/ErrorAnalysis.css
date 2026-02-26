@@ -1,0 +1,139 @@
+.error-analysis {
+  padding: 20px;
+}
+
+.error-analysis.error {
+  color: #ff6b6b;
+  padding: 20px;
+  background: rgba(255, 107, 107, 0.1);
+  border-radius: 4px;
+}
+
+.error-stats {
+  margin-bottom: 30px;
+}
+
+.error-stats h3 {
+  margin-bottom: 15px;
+  font-size: 1.1rem;
+}
+
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 15px;
+  margin-bottom: 20px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  padding: 15px;
+  background: rgba(255, 107, 107, 0.1);
+  border-left: 3px solid #ff6b6b;
+  border-radius: 4px;
+}
+
+.stat-card label {
+  font-size: 0.9rem;
+  color: #888;
+  margin-bottom: 8px;
+}
+
+.stat-value {
+  font-size: 1.8rem;
+  font-weight: bold;
+  color: #ff6b6b;
+}
+
+.error-by-operation {
+  margin-bottom: 30px;
+}
+
+.error-by-operation h3 {
+  margin-bottom: 15px;
+  font-size: 1.1rem;
+}
+
+.error-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.error-table thead {
+  background: rgba(255, 107, 107, 0.1);
+}
+
+.error-table th,
+.error-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #444;
+}
+
+.error-table th {
+  font-weight: 600;
+  color: #888;
+}
+
+.error-table tbody tr:hover {
+  background: rgba(255, 107, 107, 0.05);
+}
+
+.recent-errors {
+  margin-top: 30px;
+}
+
+.recent-errors h3 {
+  margin-bottom: 15px;
+  font-size: 1.1rem;
+}
+
+.errors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+
+.error-item {
+  padding: 15px;
+  background: rgba(255, 107, 107, 0.05);
+  border-left: 3px solid #ff6b6b;
+  border-radius: 4px;
+}
+
+.error-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.operation {
+  font-weight: 600;
+  color: #ff6b6b;
+}
+
+.error-msg {
+  flex: 1;
+  margin-left: 15px;
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.stack-trace {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 10px;
+  border-radius: 2px;
+  font-size: 0.8rem;
+  overflow-x: auto;
+  max-height: 150px;
+  overflow-y: auto;
+  margin: 0;
+}
+
+.no-data {
+  padding: 30px;
+  text-align: center;
+  color: #888;
+}

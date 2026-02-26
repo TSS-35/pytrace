@@ -1,0 +1,133 @@
+.trace-explorer {
+  padding: 20px;
+}
+
+.trace-explorer.error {
+  color: #ff6b6b;
+  padding: 20px;
+  background: rgba(255, 107, 107, 0.1);
+  border-radius: 4px;
+}
+
+.filters {
+  display: flex;
+  gap: 10px;
+  margin: 20px 0;
+  flex-wrap: wrap;
+}
+
+.search-input {
+  padding: 8px 12px;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #333;
+  color: #fff;
+  font-size: 1rem;
+  flex: 1;
+  min-width: 200px;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #646cff;
+  box-shadow: 0 0 0 2px rgba(100, 108, 255, 0.2);
+}
+
+.traces-list {
+  margin-top: 20px;
+}
+
+.trace-item {
+  border: 1px solid #444;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+
+.trace-header {
+  display: flex;
+  align-items: center;
+  padding: 12px;
+  background: rgba(100, 108, 255, 0.1);
+  cursor: pointer;
+  user-select: none;
+  gap: 12px;
+}
+
+.trace-header:hover {
+  background: rgba(100, 108, 255, 0.15);
+}
+
+.toggle {
+  display: inline-block;
+  width: 20px;
+  text-align: center;
+  font-size: 0.9rem;
+}
+
+.trace-id {
+  font-family: monospace;
+  font-weight: 600;
+  flex: 1;
+}
+
+.span-count {
+  font-size: 0.9rem;
+  color: #888;
+}
+
+.trace-details {
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.span-item {
+  padding: 10px;
+  margin-bottom: 10px;
+  background: rgba(100, 108, 255, 0.05);
+  border-left: 3px solid #646cff;
+  border-radius: 2px;
+}
+
+.span-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.operation {
+  font-weight: 600;
+  color: #646cff;
+}
+
+.duration {
+  font-size: 0.9rem;
+  color: #888;
+}
+
+.attributes {
+  margin-top: 10px;
+  font-size: 0.85rem;
+}
+
+.attributes strong {
+  display: block;
+  margin-bottom: 8px;
+  color: #aaa;
+}
+
+.attributes pre {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 8px;
+  border-radius: 2px;
+  overflow-x: auto;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.no-data {
+  padding: 30px;
+  text-align: center;
+  color: #888;
+}
