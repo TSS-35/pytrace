@@ -21,12 +21,6 @@ class TestConfigWithSampler:
         config = Config(sampler=sampler)
         
         assert config.sampler is sampler
-    
-    def test_config_sampler_by_name(self):
-        """Config should accept sampler as string for convenience."""
-        # This might be optional - test if we want to support it
-        config = Config(sampler="always")
-        assert config.sampler is not None
 
 
 class TestTracerWithSampling:

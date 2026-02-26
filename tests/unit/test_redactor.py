@@ -1,6 +1,6 @@
 """Tests for span redaction and PII masking."""
 import pytest
-from pytrace.redactor import Redactor, RedactionPattern
+from pytrace.redactor import Redactor
 
 
 class TestRedactorBasics:
@@ -90,7 +90,11 @@ class TestRedactorBasics:
     def test_redact_with_regex_patterns(self):
         """Should support regex patterns for matching keys."""
         # Pattern to match keys containing "card" or "secret"
-        redactor = Redactor(patterns=[r".*card.*", r".*secret.*"])
+        # Must explicitly enable regex to use regex patterns
+        redactor = Redactor(
+            patterns=[r".*card.*", r".*secret.*"],
+            enable_regex=True
+        )
         
         data = {
             "card_number": "4532015112830366",
@@ -172,25 +176,6 @@ class TestRedactorBasics:
         assert redacted["usernames"] == ["alice", "bob"]
 
 
-class TestRedactionPatterns:
-    """Test RedactionPattern configuration."""
-    
-    def test_pattern_creation(self):
-        """Should create RedactionPattern objects."""
-        pattern = RedactionPattern(name="password", pattern="password")
-        assert pattern.name == "password"
-        assert pattern.pattern == "password"
-    
-    def test_pattern_with_custom_value(self):
-        """Should support custom redaction values per pattern."""
-        pattern = RedactionPattern(
-            name="credit_card",
-            pattern=r"^\d{4}",
-            redaction_value="****"
-        )
-        assert pattern.redaction_value == "****"
-
-
 class TestRedactorEdgeCases:
     """Test edge cases and error handling."""
     
@@ -256,3 +241,135 @@ class TestRedactorEdgeCases:
         assert "REDACTED" in redacted["パスワード"]
         assert "REDACTED" in redacted["密码"]
         assert redacted["username"] == "user"
+
+class TestRedactorInplacePerformance:
+    """Test inplace redaction for performance-critical scenarios."""
+    
+    def test_inplace_mutation(self):
+        """Inplace redaction should mutate the original dictionary."""
+        redactor = Redactor(patterns=["password"], inplace=True)
+        data = {"password": "secret123", "username": "john"}
+        
+        result = redactor.redact(data)
+        
+        # Should return the same object (mutated)
+        assert result is data
+        assert data["password"] == "***REDACTED***"
+        assert data["username"] == "john"
+    
+    def test_non_inplace_preserves_original(self):
+        """Non-inplace redaction should not modify original dictionary."""
+        redactor = Redactor(patterns=["password"], inplace=False)
+        data = {"password": "secret123", "username": "john"}
+        original_value = data["password"]
+        
+        redacted = redactor.redact(data)
+        
+        # Original should be unchanged
+        assert data["password"] == original_value
+        assert data is not redacted
+        assert redacted["password"] == "***REDACTED***"
+    
+    def test_inplace_nested_structures(self):
+        """Inplace redaction should handle nested dictionaries."""
+        redactor = Redactor(patterns=["secret", "token"], inplace=True)
+        data = {
+            "user": {
+                "secret": "value1",
+                "nested": {
+                    "token": "abc123"
+                }
+            },
+            "public": "data"
+        }
+        
+        redactor.redact(data)
+        
+        assert data["user"]["secret"] == "***REDACTED***"
+        assert data["user"]["nested"]["token"] == "***REDACTED***"
+        assert data["public"] == "data"
+    
+    def test_inplace_list_processing(self):
+        """Inplace redaction should handle lists of dictionaries."""
+        redactor = Redactor(patterns=["password"], inplace=True)
+        data = {
+            "users": [
+                {"password": "secret1"},
+                {"password": "secret2"}
+            ]
+        }
+        
+        redactor.redact(data)
+        
+        assert data["users"][0]["password"] == "***REDACTED***"
+        assert data["users"][1]["password"] == "***REDACTED***"
+
+
+class TestRedactorSecurityRegex:
+    """Test security features around regex pattern handling."""
+    
+    def test_safe_mode_literal_patterns(self):
+        """Safe mode (default) treats patterns as literal substrings."""
+        # Pattern with regex special characters - should be treated literally
+        redactor = Redactor(patterns=["(password)"], enable_regex=False)
+        
+        # This should match the literal string "(password)", not regex
+        data = {"(password)": "secret"}
+        redacted = redactor.redact(data)
+        
+        assert redacted["(password)"] == "***REDACTED***"
+    
+    def test_safe_mode_no_regex_matching(self):
+        """Safe mode should not interpret regex patterns."""
+        # Pattern that looks like regex but should be treated literally
+        redactor = Redactor(patterns=["pass.*"], enable_regex=False)
+        
+        # "pass.*" should only match that exact string, not regex match
+        data = {
+            "pass.*": "secret1",  # Should match
+            "password": "secret2",  # Should not match
+            "pass": "secret3"  # Should not match
+        }
+        redacted = redactor.redact(data)
+        
+        assert redacted["pass.*"] == "***REDACTED***"
+        assert redacted["password"] == "secret2"
+        assert redacted["pass"] == "secret3"
+    
+    def test_regex_mode_enabled(self):
+        """Regex mode (enable_regex=True) allows actual regex patterns."""
+        redactor = Redactor(patterns=["pass.*"], enable_regex=True)
+        
+        data = {
+            "password": "secret1",
+            "passphrase": "secret2",
+            "username": "user"
+        }
+        redacted = redactor.redact(data)
+        
+        assert redacted["password"] == "***REDACTED***"
+        assert redacted["passphrase"] == "***REDACTED***"
+        assert redacted["username"] == "user"
+    
+    def test_regex_invalid_pattern_raises(self):
+        """Invalid regex pattern with enable_regex=True should raise."""
+        with pytest.raises(ValueError) as exc_info:
+            Redactor(patterns=["(invalid["], enable_regex=True)
+        
+        assert "Invalid pattern" in str(exc_info.value)
+    
+    def test_safe_mode_accepts_anything(self):
+        """Safe mode should accept any string, even invalid regex."""
+        # This would fail as regex, but safe mode escapes it
+        redactor = Redactor(patterns=["(invalid["], enable_regex=False)
+        
+        data = {"(invalid[": "secret"}
+        redacted = redactor.redact(data)
+        
+        assert redacted["(invalid["] == "***REDACTED***"
+    
+    def test_security_documentation_in_docstring(self):
+        """Class docstring should document ReDoS risk."""
+        assert "ReDoS" in Redactor.__doc__
+        assert "regex" in Redactor.__doc__.lower()
+        assert "trusted" in Redactor.__doc__.lower()

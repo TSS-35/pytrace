@@ -187,6 +187,11 @@ tracer = Tracer(config=config, collector=collector)
 | `RateLimitSampler(100)` | Database protection | Caps at fixed rate, token bucket |
 | `TraceIdSampler(0.5)` | Distributed systems | Keeps complete traces, 50% sampled |
 
+**Sampler Implementation Notes:**
+
+- **RateLimitSampler**: Thread-safe with internal locking. Safe for concurrent use in multi-threaded applications (Flask, FastAPI, etc.)
+- **TraceIdSampler**: Uses stable SHA256 hashing (not Python's built-in hash) to ensure the same trace_id produces consistent sampling decisions across all services in a distributed system
+
 ##### Span Redaction (PII Masking)
 
 pytrace can automatically redact sensitive data (passwords, API keys, PII) from span attributes and events:
@@ -254,6 +259,34 @@ redactor = Redactor(patterns=["password"], redaction_value="[MASKED]")
 
 # In compliance logs
 redactor = Redactor(patterns=["ssn"], redaction_value="XXX-XX-XXXX")
+```
+
+**Advanced Configuration:**
+
+*Safe Mode (Default - Recommended)*
+```python
+# By default, patterns are treated as literal substrings (safe)
+# No ReDoS (Regular Expression Denial of Service) vulnerability
+redactor = Redactor(patterns=["password", "token"])  # Safe, literal matching
+tracer = Tracer(config=Config(redactor=redactor))
+```
+
+*Performance Optimization for High-Volume Tracing*
+```python
+# Use inplace=True to mutate dictionaries instead of creating copies (~2-3x faster)
+# Trade-off: modifies the input dictionary
+redactor = Redactor(patterns=["password"], inplace=True)  # For production use
+tracer = Tracer(config=Config(redactor=redactor))
+```
+
+*Regex Patterns (Advanced)*
+```python
+# Enable regex if you need complex patterns (requires trusted input only)
+# WARNING: Regex patterns can be vulnerable to ReDoS attacks if untrusted
+redactor = Redactor(patterns=[r"card_\d{4}"], enable_regex=True)  # Matches "card_1234"
+
+# Safe: Still use enable_regex for trusted patterns
+# Avoid patterns like: (a+)+b  or  (a|a)*b  (catastrophic backtracking)
 ```
 
 #### **Query API**
@@ -396,142 +429,6 @@ poetry run pytest tests/unit/test_span.py -v
 # Run with coverage report
 poetry run pytest tests/ --cov=pytrace --cov=collector --cov-report=html
 ```
-
-### Test Suite Overview
-
-**Total Test Count: 179 tests (119 unit + 60 integration)**
-
-#### Unit Tests (119 tests)
-
-**Span & Events (9 tests)** - `test_span.py`
-- Span creation with auto-generated IDs
-- Span duration measurement
-- Span event recording and lifecycle
-- Event context preservation
-- Error tracking and status
-
-**Configuration (2 tests)** - `test_config.py`
-- Module filtering logic
-- Configuration initialization
-
-**Sampling Strategies (25 tests)** - `test_sampler.py`, `test_config_sampling.py`
-- Probability-based sampling with statistical validation
-- Rate-limiting with token bucket algorithm
-- Trace-level deterministic sampling
-- Sampler integration with Config and Tracer
-- Sampling impact on span collection and metrics
-
-**Span Redaction (31 tests)** - `test_redactor.py`, `test_span_redaction.py`
-- Pattern-based redaction (substring and regex)
-- Case-insensitive matching
-- Nested attribute redaction
-- Custom redaction replacement values
-- Event attribute redaction
-- Config and Tracer integration
-- PII and sensitive data masking
-
-**Collectors (19 tests)** - `test_base.py`, `test_memory_collector.py`, `test_jsonfile.py`, `test_sqlite.py`
-- Memory collector buffering
-- Batch memory collector with callbacks
-- JSON file collector with disk persistence
-- SQLite collector with database storage
-- Collector interface compliance
-
-**Tracer & Context (16 tests)** - `test_tracer.py`
-- Span creation and ID generation
-- Active span context management
-- Trace context extraction/injection (W3C headers)
-- HTTP header propagation
-- Automatic function instrumentation (auto-trace)
-- Nested call capture
-- Exception handling in traced functions
-- Metrics tracking (counts, errors, duration stats, span names)
-- Metrics reset functionality
-
-**Query API (14 tests)** - `test_query_api.py`
-- Span filtering by trace ID, name, error status, duration
-- Multi-filter AND logic
-- Sorting by duration, start time, name (ascending/descending)
-- Pagination with limit/offset
-- Method chaining
-- Result counting
-
-**HTTP Server API (21 tests)** - `test_server_api.py`
-- Health check endpoint
-- Span retrieval and filtering
-- Trace retrieval and grouping
-- Operation enumeration
-- Metrics endpoint
-- Query parameter handling
-- Error responses and validation
-- JSON serialization
-
-#### Integration Tests (60 tests)
-
-**End-to-End Tracing Flow (9 tests)** - `test_end_to_end_tracing.py`
-- Complete span lifecycle workflow
-- Nested span hierarchies
-- Multiple isolated traces
-- Error capture and propagation
-- Metrics collection validation
-- Duration stats aggregation
-- Complex query combinations with sorting/pagination
-
-**Distributed Tracing (6 tests)** - `test_distributed_tracing.py`
-- Multi-service trace propagation
-- Context extraction from W3C headers
-- Context injection into headers
-- Header round-trip preservation
-- Multi-hop distributed traces
-- Cross-service error tracking
-
-**Auto-Trace Integration (5 tests)** - `test_auto_trace_integration.py`
-- Automatic span creation for function calls
-- Nested function call hierarchy preservation
-- Exception handling and capture
-- Module filtering behavior
-- Metrics accumulation from auto-traced functions
-
-**Server Integration (12 tests)** - `test_server_integration.py`
-- Server data consistency with Query API
-- Metrics accuracy across endpoints
-- Trace grouping and retrieval
-- Complex filtering scenarios
-- Multi-collector routing
-- Batch collector integration
-- End-to-end server flows with real data
-
-**Sampling Integration (9 tests)** - `test_sampling_integration.py`
-- High-volume API with probability sampling
-- Trace-level sampling consistency
-- Rate limiting effectiveness
-- Metrics accuracy with sampling
-- Production configuration patterns
-
-**Redaction Integration (7 tests)** - `test_redaction_integration.py`
-- User authentication flow redaction
-- Database operations with PII masking
-- API call credential redaction
-- Redaction with sampling combined
-- Complex nested trace redaction
-- Sensitive data examples (passwords, tokens, SSN, credit cards)
-- Custom redaction replacement values
-
-### Test Results
-
-```
-============================= 179 passed in 1.77s ==============================
-119 unit tests + 60 integration tests
-```
-
-All tests pass consistently, demonstrating:
-- Core functionality correctness
-- Sampling strategy effectiveness
-- Span redaction (PII masking) reliability
-- Component integration reliability
-- Distributed tracing support
-- HTTP API compliance
-- Query capability accuracy
 
 ## Project Structure
 

@@ -15,36 +15,49 @@ class Tracer:
     @property
     def active_span(self) -> Optional[Span]:
         return active_span_var.get()
+    
+    def _create_noop_span(self, name: str, trace_id: str, parent_id: Optional[str], 
+                          attributes: Dict) -> Span:
+        """Create a no-op span that won't be collected.
+        
+        Used when sampling rejects a span.
+        
+        Args:
+            name: Span name
+            trace_id: Trace ID
+            parent_id: Parent span ID
+            attributes: Span attributes
+            
+        Returns:
+            Span with on_finish=None (won't be collected)
+        """
+        return Span(
+            name=name,
+            trace_id=trace_id,
+            parent_id=parent_id,
+            attributes=attributes or {},
+            on_finish=None  # Don't collect this span
+        )
 
     def start_span(self, name: str, **kwargs) -> Span:
         parent = self.active_span
         trace_id = kwargs.get("trace_id") or (parent.trace_id if parent else uuid.uuid4().hex)
         parent_id = kwargs.get("parent_id") or (parent.span_id if parent else None)
+        attributes = kwargs.get("attributes") or {}
         
         # Check sampling decision
         if self.config and self.config.sampler:
-            # For TraceIdSampler, pass trace_id; for others, they don't need it
             sampler = self.config.sampler
-            if hasattr(sampler, '__class__') and sampler.__class__.__name__ == 'TraceIdSampler':
-                if not sampler.should_sample(trace_id):
-                    # Return a no-op span that doesn't get collected
-                    return Span(
-                        name=name,
-                        trace_id=trace_id,
-                        parent_id=parent_id,
-                        attributes=kwargs.get("attributes") or {},
-                        on_finish=None  # Don't collect this span
-                    )
-            else:
-                if not sampler.should_sample():
-                    # Return a no-op span that doesn't get collected
-                    return Span(
-                        name=name,
-                        trace_id=trace_id,
-                        parent_id=parent_id,
-                        attributes=kwargs.get("attributes") or {},
-                        on_finish=None  # Don't collect this span
-                    )
+            # Use requires_trace_id() method instead of fragile class name comparison
+            should_sample = (
+                sampler.should_sample(trace_id) 
+                if sampler.requires_trace_id() 
+                else sampler.should_sample()
+            )
+            
+            if not should_sample:
+                # Sampling rejected this span, return no-op span
+                return self._create_noop_span(name, trace_id, parent_id, attributes)
         
         span = Span(
             name=name,
