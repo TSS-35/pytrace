@@ -139,16 +139,154 @@ flushed_spans = collector.flush()
 ```
 
 #### **Config**
-Controls what gets traced:
+Controls what gets traced and sampling behavior:
 
 ```python
 from pytrace.config import Config
+from pytrace.sampler import ProbabilitySampler
 
-config = Config(
-    trace_modules=["myapp.core", "myapp.handlers"],  # Only these
-    exclude_modules=["myapp.vendor"]                  # Except these
-)
+# Basic configuration
+config = Config()
 tracer = Tracer(config=config)
+```
+
+##### Sampling Strategies
+
+pytrace includes multiple sampling strategies to reduce data volume in production without losing critical traces:
+
+```python
+from pytrace.sampler import (
+    ProbabilitySampler,      # Sample X% of spans
+    RateLimitSampler,        # Cap spans per second
+    TraceIdSampler,          # Sample entire traces
+    AlwaysSampler            # Debug mode (sample all)
+)
+
+# 10% probability sampling (production)
+config = Config(sampler=ProbabilitySampler(0.1))
+
+# Rate limiting: max 100 spans/second
+config = Config(sampler=RateLimitSampler(100))
+
+# Deterministic trace-level sampling (50% of traces)
+# Same trace ID always gets same decision - keeps traces complete
+config = Config(sampler=TraceIdSampler(0.5))
+
+# Debug mode: capture everything
+config = Config(sampler=AlwaysSampler())
+
+tracer = Tracer(config=config, collector=collector)
+```
+
+**Sampling Strategy Guide:**
+
+| Strategy | Use Case | Behavior |
+|----------|----------|----------|
+| `AlwaysSampler` | Development, debugging | Samples every span |
+| `ProbabilitySampler(0.01)` | High-volume production | Reduces storage by ~99%, stateless |
+| `RateLimitSampler(100)` | Database protection | Caps at fixed rate, token bucket |
+| `TraceIdSampler(0.5)` | Distributed systems | Keeps complete traces, 50% sampled |
+
+**Sampler Implementation Notes:**
+
+- **RateLimitSampler**: Thread-safe with internal locking. Safe for concurrent use in multi-threaded applications (Flask, FastAPI, etc.)
+- **TraceIdSampler**: Uses stable SHA256 hashing (not Python's built-in hash) to ensure the same trace_id produces consistent sampling decisions across all services in a distributed system
+
+##### Span Redaction (PII Masking)
+
+pytrace can automatically redact sensitive data (passwords, API keys, PII) from span attributes and events:
+
+```python
+from pytrace.redactor import Redactor
+
+# Define patterns for sensitive data
+patterns = [
+    "password",
+    "api_key",
+    "api_secret",
+    "token",
+    "ssn",
+    "credit_card"
+]
+
+redactor = Redactor(patterns=patterns)
+config = Config(redactor=redactor)
+tracer = Tracer(config=config, collector=collector)
+
+# Sensitive data automatically redacted on span finish
+with tracer.start_span("user_login") as span:
+    span.attributes["username"] = "alice"          # Preserved
+    span.attributes["password"] = "secret123"      # Redacted → ***REDACTED***
+    span.add_event("auth_attempt", attributes={
+        "token": "jwt_token_xyz",                  # Redacted
+        "status": "success"                        # Preserved
+    })
+```
+
+**Redaction Features:**
+- Pattern-based matching (substring and regex)
+- Case-insensitive by default
+- Custom redaction replacement values
+- Recursive redaction of nested attributes
+- Redacts both span attributes and event attributes
+- Works with any collector backend
+
+**Common Sensitive Patterns:**
+```python
+# PII (Personally Identifiable Information)
+patterns = ["ssn", "social_security_number", "passport", "license"]
+
+# Authentication
+patterns = ["password", "pwd", "pin", "token", "secret"]
+
+# Financial
+patterns = ["credit_card", "card_number", "cvv", "bank_account"]
+
+# API Security
+patterns = ["api_key", "api_secret", "bearer_token", "auth_header"]
+
+# Custom Organization
+patterns = ["internal_id", "proprietary_data", "business_secret"]
+```
+
+**Custom Redaction Values:**
+```python
+# Default: ***REDACTED***
+redactor = Redactor(patterns=["password"])
+
+# Custom value
+redactor = Redactor(patterns=["password"], redaction_value="[MASKED]")
+
+# In compliance logs
+redactor = Redactor(patterns=["ssn"], redaction_value="XXX-XX-XXXX")
+```
+
+**Advanced Configuration:**
+
+*Safe Mode (Default - Recommended)*
+```python
+# By default, patterns are treated as literal substrings (safe)
+# No ReDoS (Regular Expression Denial of Service) vulnerability
+redactor = Redactor(patterns=["password", "token"])  # Safe, literal matching
+tracer = Tracer(config=Config(redactor=redactor))
+```
+
+*Performance Optimization for High-Volume Tracing*
+```python
+# Use inplace=True to mutate dictionaries instead of creating copies (~2-3x faster)
+# Trade-off: modifies the input dictionary
+redactor = Redactor(patterns=["password"], inplace=True)  # For production use
+tracer = Tracer(config=Config(redactor=redactor))
+```
+
+*Regex Patterns (Advanced)*
+```python
+# Enable regex if you need complex patterns (requires trusted input only)
+# WARNING: Regex patterns can be vulnerable to ReDoS attacks if untrusted
+redactor = Redactor(patterns=[r"card_\d{4}"], enable_regex=True)  # Matches "card_1234"
+
+# Safe: Still use enable_regex for trusted patterns
+# Avoid patterns like: (a+)+b  or  (a|a)*b  (catastrophic backtracking)
 ```
 
 #### **Query API**
@@ -292,108 +430,6 @@ poetry run pytest tests/unit/test_span.py -v
 poetry run pytest tests/ --cov=pytrace --cov=collector --cov-report=html
 ```
 
-### Test Suite Overview
-
-**Total Test Count: 107 tests (75 unit + 32 integration)**
-
-#### Unit Tests (75 tests)
-
-**Span & Events (9 tests)** - `test_span.py`
-- Span creation with auto-generated IDs
-- Span duration measurement
-- Span event recording and lifecycle
-- Event context preservation
-- Error tracking and status
-
-**Configuration (2 tests)** - `test_config.py`
-- Module filtering logic
-- Configuration initialization
-
-**Collectors (19 tests)** - `test_base.py`, `test_memory_collector.py`, `test_jsonfile.py`, `test_sqlite.py`
-- Memory collector buffering
-- Batch memory collector with callbacks
-- JSON file collector with disk persistence
-- SQLite collector with database storage
-- Collector interface compliance
-
-**Tracer & Context (16 tests)** - `test_tracer.py`
-- Span creation and ID generation
-- Active span context management
-- Trace context extraction/injection (W3C headers)
-- HTTP header propagation
-- Automatic function instrumentation (auto-trace)
-- Nested call capture
-- Exception handling in traced functions
-- Metrics tracking (counts, errors, duration stats, span names)
-- Metrics reset functionality
-
-**Query API (14 tests)** - `test_query_api.py`
-- Span filtering by trace ID, name, error status, duration
-- Multi-filter AND logic
-- Sorting by duration, start time, name (ascending/descending)
-- Pagination with limit/offset
-- Method chaining
-- Result counting
-
-**HTTP Server API (21 tests)** - `test_server_api.py`
-- Health check endpoint
-- Span retrieval and filtering
-- Trace retrieval and grouping
-- Operation enumeration
-- Metrics endpoint
-- Query parameter handling
-- Error responses and validation
-- JSON serialization
-
-#### Integration Tests (32 tests)
-
-**End-to-End Tracing Flow (9 tests)** - `test_end_to_end_tracing.py`
-- Complete span lifecycle workflow
-- Nested span hierarchies
-- Multiple isolated traces
-- Error capture and propagation
-- Metrics collection validation
-- Duration stats aggregation
-- Complex query combinations with sorting/pagination
-
-**Distributed Tracing (6 tests)** - `test_distributed_tracing.py`
-- Multi-service trace propagation
-- Context extraction from W3C headers
-- Context injection into headers
-- Header round-trip preservation
-- Multi-hop distributed traces
-- Cross-service error tracking
-
-**Auto-Trace Integration (5 tests)** - `test_auto_trace_integration.py`
-- Automatic span creation for function calls
-- Nested function call hierarchy preservation
-- Exception handling and capture
-- Module filtering behavior
-- Metrics accumulation from auto-traced functions
-
-**Server Integration (12 tests)** - `test_server_integration.py`
-- Server data consistency with Query API
-- Metrics accuracy across endpoints
-- Trace grouping and retrieval
-- Complex filtering scenarios
-- Multi-collector routing
-- Batch collector integration
-- End-to-end server flows with real data
-
-### Test Results
-
-```
-============================= 107 passed in 1.00s ==============================
-75 unit tests + 32 integration tests
-```
-
-All tests pass consistently, demonstrating:
-- Core functionality correctness
-- Component integration reliability
-- Distributed tracing support
-- HTTP API compliance
-- Query capability accuracy
-
 ## Project Structure
 
 ```
@@ -401,7 +437,11 @@ pytrace/
 ├── pytrace/
 │   ├── span.py         # Span class with events and context manager
 │   ├── tracer.py       # Tracer with auto-instrumentation and metrics
-│   ├── config.py       # Module filtering configuration
+│   ├── config.py       # Module filtering, sampling, and redaction configuration
+│   ├── sampler.py      # Sampling strategies (probability, rate-limit, trace-level)
+│   ├── redactor.py     # Span redaction for masking sensitive data (PII)
+│   ├── query.py        # Query API for filtering and analyzing spans
+│   ├── server.py       # Flask HTTP API server
 │   └── context.py      # Context variable for active spans
 ├── collector/
 │   ├── base.py         # Abstract collector and MultiCollector
@@ -409,7 +449,13 @@ pytrace/
 │   ├── jsonfile.py     # JSON file persistence
 │   └── sqlite.py       # SQLite persistence
 ├── tests/
-│   └── unit/           # Comprehensive unit tests
+│   ├── unit/           # Comprehensive unit tests (119 tests)
+│   └── integration/    # Integration tests (60 tests)
+├── examples/
+│   ├── sampling.py     # Sampling strategy examples
+│   ├── redaction.py    # Span redaction examples
+│   ├── query_api.py    # Query API examples
+│   └── server.py       # HTTP server examples
 ├── pyproject.toml      # Poetry configuration
 └── README.md           # This file
 ```
