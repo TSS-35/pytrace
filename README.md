@@ -187,6 +187,75 @@ tracer = Tracer(config=config, collector=collector)
 | `RateLimitSampler(100)` | Database protection | Caps at fixed rate, token bucket |
 | `TraceIdSampler(0.5)` | Distributed systems | Keeps complete traces, 50% sampled |
 
+##### Span Redaction (PII Masking)
+
+pytrace can automatically redact sensitive data (passwords, API keys, PII) from span attributes and events:
+
+```python
+from pytrace.redactor import Redactor
+
+# Define patterns for sensitive data
+patterns = [
+    "password",
+    "api_key",
+    "api_secret",
+    "token",
+    "ssn",
+    "credit_card"
+]
+
+redactor = Redactor(patterns=patterns)
+config = Config(redactor=redactor)
+tracer = Tracer(config=config, collector=collector)
+
+# Sensitive data automatically redacted on span finish
+with tracer.start_span("user_login") as span:
+    span.attributes["username"] = "alice"          # Preserved
+    span.attributes["password"] = "secret123"      # Redacted → ***REDACTED***
+    span.add_event("auth_attempt", attributes={
+        "token": "jwt_token_xyz",                  # Redacted
+        "status": "success"                        # Preserved
+    })
+```
+
+**Redaction Features:**
+- Pattern-based matching (substring and regex)
+- Case-insensitive by default
+- Custom redaction replacement values
+- Recursive redaction of nested attributes
+- Redacts both span attributes and event attributes
+- Works with any collector backend
+
+**Common Sensitive Patterns:**
+```python
+# PII (Personally Identifiable Information)
+patterns = ["ssn", "social_security_number", "passport", "license"]
+
+# Authentication
+patterns = ["password", "pwd", "pin", "token", "secret"]
+
+# Financial
+patterns = ["credit_card", "card_number", "cvv", "bank_account"]
+
+# API Security
+patterns = ["api_key", "api_secret", "bearer_token", "auth_header"]
+
+# Custom Organization
+patterns = ["internal_id", "proprietary_data", "business_secret"]
+```
+
+**Custom Redaction Values:**
+```python
+# Default: ***REDACTED***
+redactor = Redactor(patterns=["password"])
+
+# Custom value
+redactor = Redactor(patterns=["password"], redaction_value="[MASKED]")
+
+# In compliance logs
+redactor = Redactor(patterns=["ssn"], redaction_value="XXX-XX-XXXX")
+```
+
 #### **Query API**
 Powerful fluent interface for filtering and analyzing spans:
 
@@ -330,9 +399,9 @@ poetry run pytest tests/ --cov=pytrace --cov=collector --cov-report=html
 
 ### Test Suite Overview
 
-**Total Test Count: 141 tests (100 unit + 41 integration)**
+**Total Test Count: 179 tests (119 unit + 60 integration)**
 
-#### Unit Tests (100 tests)
+#### Unit Tests (119 tests)
 
 **Span & Events (9 tests)** - `test_span.py`
 - Span creation with auto-generated IDs
@@ -351,6 +420,15 @@ poetry run pytest tests/ --cov=pytrace --cov=collector --cov-report=html
 - Trace-level deterministic sampling
 - Sampler integration with Config and Tracer
 - Sampling impact on span collection and metrics
+
+**Span Redaction (31 tests)** - `test_redactor.py`, `test_span_redaction.py`
+- Pattern-based redaction (substring and regex)
+- Case-insensitive matching
+- Nested attribute redaction
+- Custom redaction replacement values
+- Event attribute redaction
+- Config and Tracer integration
+- PII and sensitive data masking
 
 **Collectors (19 tests)** - `test_base.py`, `test_memory_collector.py`, `test_jsonfile.py`, `test_sqlite.py`
 - Memory collector buffering
@@ -388,7 +466,7 @@ poetry run pytest tests/ --cov=pytrace --cov=collector --cov-report=html
 - Error responses and validation
 - JSON serialization
 
-#### Integration Tests (41 tests)
+#### Integration Tests (60 tests)
 
 **End-to-End Tracing Flow (9 tests)** - `test_end_to_end_tracing.py`
 - Complete span lifecycle workflow
@@ -430,16 +508,26 @@ poetry run pytest tests/ --cov=pytrace --cov=collector --cov-report=html
 - Metrics accuracy with sampling
 - Production configuration patterns
 
+**Redaction Integration (7 tests)** - `test_redaction_integration.py`
+- User authentication flow redaction
+- Database operations with PII masking
+- API call credential redaction
+- Redaction with sampling combined
+- Complex nested trace redaction
+- Sensitive data examples (passwords, tokens, SSN, credit cards)
+- Custom redaction replacement values
+
 ### Test Results
 
 ```
-============================= 141 passed in 1.76s ==============================
-100 unit tests + 41 integration tests
+============================= 179 passed in 1.77s ==============================
+119 unit tests + 60 integration tests
 ```
 
 All tests pass consistently, demonstrating:
 - Core functionality correctness
 - Sampling strategy effectiveness
+- Span redaction (PII masking) reliability
 - Component integration reliability
 - Distributed tracing support
 - HTTP API compliance
@@ -452,8 +540,9 @@ pytrace/
 ├── pytrace/
 │   ├── span.py         # Span class with events and context manager
 │   ├── tracer.py       # Tracer with auto-instrumentation and metrics
-│   ├── config.py       # Module filtering and sampling configuration
+│   ├── config.py       # Module filtering, sampling, and redaction configuration
 │   ├── sampler.py      # Sampling strategies (probability, rate-limit, trace-level)
+│   ├── redactor.py     # Span redaction for masking sensitive data (PII)
 │   ├── query.py        # Query API for filtering and analyzing spans
 │   ├── server.py       # Flask HTTP API server
 │   └── context.py      # Context variable for active spans
@@ -463,10 +552,11 @@ pytrace/
 │   ├── jsonfile.py     # JSON file persistence
 │   └── sqlite.py       # SQLite persistence
 ├── tests/
-│   ├── unit/           # Comprehensive unit tests (100 tests)
-│   └── integration/    # Integration tests (41 tests)
+│   ├── unit/           # Comprehensive unit tests (119 tests)
+│   └── integration/    # Integration tests (60 tests)
 ├── examples/
 │   ├── sampling.py     # Sampling strategy examples
+│   ├── redaction.py    # Span redaction examples
 │   ├── query_api.py    # Query API examples
 │   └── server.py       # HTTP server examples
 ├── pyproject.toml      # Poetry configuration

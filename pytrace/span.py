@@ -14,14 +14,30 @@ class Span:
     attributes: Dict[str, str] = field(default_factory=dict)
     events: List[Dict[str, Any]] = field(default_factory=list)
     on_finish: Optional[Callable[['Span'], Any]] = field(default=None, repr=False)
+    redactor: Optional[Any] = field(default=None, repr=False)
     _token: Optional[Any] = field(default=None, repr=False)
 
     def finish(self):
         """Mark the span as finished and trigger the collector callback."""
         if self.end_time is None:
             self.end_time = time()
+            # Apply redaction before finishing
+            self._apply_redaction()
             if self.on_finish:
                 self.on_finish(self)
+    
+    def _apply_redaction(self):
+        """Apply redaction to sensitive data."""
+        if not self.redactor:
+            return
+        
+        # Redact attributes
+        self.attributes = self.redactor.redact(self.attributes)
+        
+        # Redact event attributes
+        for event in self.events:
+            if "attributes" in event:
+                event["attributes"] = self.redactor.redact(event["attributes"])
 
     def add_event(self, name: str, attributes: Optional[Dict[str, Any]] = None):
         """Add a timestamped event to the span."""

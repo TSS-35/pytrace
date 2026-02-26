@@ -51,7 +51,8 @@ class Tracer:
             trace_id=trace_id,
             parent_id=parent_id,
             attributes=kwargs.get("attributes") or {},
-            on_finish=self.collector.send_span if self.collector else None
+            on_finish=self.collector.send_span if self.collector else None,
+            redactor=self.config.redactor if self.config else None
         )
         self._spans.append(span)  # Track for metrics
         return span
