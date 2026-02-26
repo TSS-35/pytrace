@@ -21,6 +21,31 @@ class Tracer:
         trace_id = kwargs.get("trace_id") or (parent.trace_id if parent else uuid.uuid4().hex)
         parent_id = kwargs.get("parent_id") or (parent.span_id if parent else None)
         
+        # Check sampling decision
+        if self.config and self.config.sampler:
+            # For TraceIdSampler, pass trace_id; for others, they don't need it
+            sampler = self.config.sampler
+            if hasattr(sampler, '__class__') and sampler.__class__.__name__ == 'TraceIdSampler':
+                if not sampler.should_sample(trace_id):
+                    # Return a no-op span that doesn't get collected
+                    return Span(
+                        name=name,
+                        trace_id=trace_id,
+                        parent_id=parent_id,
+                        attributes=kwargs.get("attributes") or {},
+                        on_finish=None  # Don't collect this span
+                    )
+            else:
+                if not sampler.should_sample():
+                    # Return a no-op span that doesn't get collected
+                    return Span(
+                        name=name,
+                        trace_id=trace_id,
+                        parent_id=parent_id,
+                        attributes=kwargs.get("attributes") or {},
+                        on_finish=None  # Don't collect this span
+                    )
+        
         span = Span(
             name=name,
             trace_id=trace_id,

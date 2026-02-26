@@ -139,17 +139,53 @@ flushed_spans = collector.flush()
 ```
 
 #### **Config**
-Controls what gets traced:
+Controls what gets traced and sampling behavior:
 
 ```python
 from pytrace.config import Config
+from pytrace.sampler import ProbabilitySampler
 
-config = Config(
-    trace_modules=["myapp.core", "myapp.handlers"],  # Only these
-    exclude_modules=["myapp.vendor"]                  # Except these
-)
+# Basic configuration
+config = Config()
 tracer = Tracer(config=config)
 ```
+
+##### Sampling Strategies
+
+pytrace includes multiple sampling strategies to reduce data volume in production without losing critical traces:
+
+```python
+from pytrace.sampler import (
+    ProbabilitySampler,      # Sample X% of spans
+    RateLimitSampler,        # Cap spans per second
+    TraceIdSampler,          # Sample entire traces
+    AlwaysSampler            # Debug mode (sample all)
+)
+
+# 10% probability sampling (production)
+config = Config(sampler=ProbabilitySampler(0.1))
+
+# Rate limiting: max 100 spans/second
+config = Config(sampler=RateLimitSampler(100))
+
+# Deterministic trace-level sampling (50% of traces)
+# Same trace ID always gets same decision - keeps traces complete
+config = Config(sampler=TraceIdSampler(0.5))
+
+# Debug mode: capture everything
+config = Config(sampler=AlwaysSampler())
+
+tracer = Tracer(config=config, collector=collector)
+```
+
+**Sampling Strategy Guide:**
+
+| Strategy | Use Case | Behavior |
+|----------|----------|----------|
+| `AlwaysSampler` | Development, debugging | Samples every span |
+| `ProbabilitySampler(0.01)` | High-volume production | Reduces storage by ~99%, stateless |
+| `RateLimitSampler(100)` | Database protection | Caps at fixed rate, token bucket |
+| `TraceIdSampler(0.5)` | Distributed systems | Keeps complete traces, 50% sampled |
 
 #### **Query API**
 Powerful fluent interface for filtering and analyzing spans:
@@ -294,9 +330,9 @@ poetry run pytest tests/ --cov=pytrace --cov=collector --cov-report=html
 
 ### Test Suite Overview
 
-**Total Test Count: 107 tests (75 unit + 32 integration)**
+**Total Test Count: 141 tests (100 unit + 41 integration)**
 
-#### Unit Tests (75 tests)
+#### Unit Tests (100 tests)
 
 **Span & Events (9 tests)** - `test_span.py`
 - Span creation with auto-generated IDs
@@ -308,6 +344,13 @@ poetry run pytest tests/ --cov=pytrace --cov=collector --cov-report=html
 **Configuration (2 tests)** - `test_config.py`
 - Module filtering logic
 - Configuration initialization
+
+**Sampling Strategies (25 tests)** - `test_sampler.py`, `test_config_sampling.py`
+- Probability-based sampling with statistical validation
+- Rate-limiting with token bucket algorithm
+- Trace-level deterministic sampling
+- Sampler integration with Config and Tracer
+- Sampling impact on span collection and metrics
 
 **Collectors (19 tests)** - `test_base.py`, `test_memory_collector.py`, `test_jsonfile.py`, `test_sqlite.py`
 - Memory collector buffering
@@ -345,7 +388,7 @@ poetry run pytest tests/ --cov=pytrace --cov=collector --cov-report=html
 - Error responses and validation
 - JSON serialization
 
-#### Integration Tests (32 tests)
+#### Integration Tests (41 tests)
 
 **End-to-End Tracing Flow (9 tests)** - `test_end_to_end_tracing.py`
 - Complete span lifecycle workflow
@@ -380,15 +423,23 @@ poetry run pytest tests/ --cov=pytrace --cov=collector --cov-report=html
 - Batch collector integration
 - End-to-end server flows with real data
 
+**Sampling Integration (9 tests)** - `test_sampling_integration.py`
+- High-volume API with probability sampling
+- Trace-level sampling consistency
+- Rate limiting effectiveness
+- Metrics accuracy with sampling
+- Production configuration patterns
+
 ### Test Results
 
 ```
-============================= 107 passed in 1.00s ==============================
-75 unit tests + 32 integration tests
+============================= 141 passed in 1.76s ==============================
+100 unit tests + 41 integration tests
 ```
 
 All tests pass consistently, demonstrating:
 - Core functionality correctness
+- Sampling strategy effectiveness
 - Component integration reliability
 - Distributed tracing support
 - HTTP API compliance
@@ -401,7 +452,10 @@ pytrace/
 ├── pytrace/
 │   ├── span.py         # Span class with events and context manager
 │   ├── tracer.py       # Tracer with auto-instrumentation and metrics
-│   ├── config.py       # Module filtering configuration
+│   ├── config.py       # Module filtering and sampling configuration
+│   ├── sampler.py      # Sampling strategies (probability, rate-limit, trace-level)
+│   ├── query.py        # Query API for filtering and analyzing spans
+│   ├── server.py       # Flask HTTP API server
 │   └── context.py      # Context variable for active spans
 ├── collector/
 │   ├── base.py         # Abstract collector and MultiCollector
@@ -409,7 +463,12 @@ pytrace/
 │   ├── jsonfile.py     # JSON file persistence
 │   └── sqlite.py       # SQLite persistence
 ├── tests/
-│   └── unit/           # Comprehensive unit tests
+│   ├── unit/           # Comprehensive unit tests (100 tests)
+│   └── integration/    # Integration tests (41 tests)
+├── examples/
+│   ├── sampling.py     # Sampling strategy examples
+│   ├── query_api.py    # Query API examples
+│   └── server.py       # HTTP server examples
 ├── pyproject.toml      # Poetry configuration
 └── README.md           # This file
 ```

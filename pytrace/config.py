@@ -1,11 +1,17 @@
 import os
-from typing import List
+from typing import List, Optional
 
 class Config:
-    def __init__(self):
+    def __init__(self, sampler=None):
         # Basic Settings
         self.enabled: bool = os.getenv("PYTRACE_ENABLED", "true").lower() == "true"
         self.service_name: str = os.getenv("PYTRACE_SERVICE_NAME", "unnamed-python-service")
+        
+        # Sampling Configuration
+        if sampler is None:
+            from pytrace.sampler import NoOpSampler
+            sampler = NoOpSampler()
+        self.sampler = sampler
         
         # Performance & Noise Control
         self.exclude_modules: List[str] = [
