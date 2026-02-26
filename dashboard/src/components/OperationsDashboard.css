@@ -1,0 +1,100 @@
+.operations-dashboard {
+  padding: 20px;
+}
+
+.operations-dashboard.error {
+  color: #ff6b6b;
+  padding: 20px;
+  background: rgba(255, 107, 107, 0.1);
+  border-radius: 4px;
+}
+
+.filter-input {
+  display: block;
+  width: 100%;
+  max-width: 300px;
+  padding: 8px 12px;
+  margin: 20px 0;
+  border: 1px solid #444;
+  border-radius: 4px;
+  background: #333;
+  color: #fff;
+  font-size: 1rem;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #646cff;
+  box-shadow: 0 0 0 2px rgba(100, 108, 255, 0.2);
+}
+
+.operations-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 15px;
+}
+
+.operations-table thead {
+  background: rgba(100, 108, 255, 0.1);
+}
+
+.operations-table th {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #444;
+  font-weight: 600;
+  color: #888;
+  font-size: 0.9rem;
+}
+
+.operations-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.operations-table th.sortable:hover {
+  background: rgba(100, 108, 255, 0.15);
+}
+
+.operations-table th.sortable.active {
+  color: #646cff;
+}
+
+.sort-icon {
+  font-size: 0.8rem;
+  margin-left: 8px;
+}
+
+.operations-table td {
+  padding: 12px;
+  border-bottom: 1px solid #444;
+}
+
+.operations-table tbody tr:hover {
+  background: rgba(100, 108, 255, 0.05);
+}
+
+.error-rate {
+  padding: 4px 8px;
+  border-radius: 3px;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.error-rate.high {
+  background: rgba(255, 107, 107, 0.3);
+  color: #ff6b6b;
+}
+
+.error-rate:not(.high) {
+  color: #4ade80;
+}
+
+.no-data {
+  padding: 30px;
+  text-align: center;
+  color: #888;
+}
